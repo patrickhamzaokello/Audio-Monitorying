@@ -50,8 +50,9 @@ def load_fingerprint_db(pickle_dir: str = "fingerprints"):
     
     print(f"Loaded {len(fingerprint_db)} fingerprint files")
 
+
 def generate_hashes_for_query(audio_path: str, sample_rate: int = 22050) -> List[tuple]:
-    """Generate hashes for a query audio file (same as your existing code)"""
+    """Generate hashes for a query audio file using the same algorithm as the fingerprinter"""
     try:
         # Load and preprocess audio
         audio, sr = librosa.load(audio_path, sr=sample_rate, mono=True)
@@ -68,32 +69,108 @@ def generate_hashes_for_query(audio_path: str, sample_rate: int = 22050) -> List
         )
         S_db = librosa.power_to_db(spec, ref=np.max)
         
-        # Find peaks
-        data_max = ndimage.maximum_filter(S_db, size=10)
+        # Find peaks using SAME parameters as the fingerprinter
+        neighborhood_size = 10  # From OPTIMAL_PARAMS
+        threshold = 0.35        # From OPTIMAL_PARAMS
+        
+        # Find local maximum points
+        data_max = ndimage.maximum_filter(S_db, size=neighborhood_size)
+        
+        # For dB-scale: calculate threshold based on the range
         min_val = np.min(S_db)
         max_val = np.max(S_db)
         db_range = max_val - min_val
-        peak_threshold = min_val + (db_range * 0.7)  # Using 0.3 threshold equivalent
+        
+        # Calculate threshold as a percentage of range above the minimum
+        peak_threshold = min_val + (db_range * (1 - threshold))
+        
+        # Boolean array of peaks that exceed threshold
         maxima = (S_db == data_max) & (S_db > peak_threshold)
+        
+        # Get peak positions
         peak_positions = np.where(maxima)
+        
+        # Convert to list of (freq_bin, time_bin) tuples
         peaks = list(zip(peak_positions[0], peak_positions[1]))
         
-        # Generate hashes
-        hashes = []
-        peaks.sort(key=lambda p: p[1])  # Sort by time
+        # Apply density-based filtering to ensure consistent peak density
+        if peaks:
+            # Target peak density (per unit area in spectrogram)
+            target_density = 0.001  # peaks per pixel
+            
+            # Calculate current density
+            spectrogram_area = S_db.shape[0] * S_db.shape[1]
+            current_density = len(peaks) / spectrogram_area
+            
+            # If density is too high, sample peaks to reduce density
+            if current_density > target_density:
+                # Calculate how many peaks to keep
+                keep_count = int(spectrogram_area * target_density)
+                # Randomly sample peaks
+                keep_indices = np.random.choice(len(peaks), keep_count, replace=False)
+                peaks = [peaks[i] for i in keep_indices]
         
+        # Generate hashes with SAME parameters as fingerprinter
+        fan_out = 15       # From OPTIMAL_PARAMS
+        time_window = 200  # From OPTIMAL_PARAMS
+        
+        hashes = []
+        
+        # Sort peaks by time for more efficient processing
+        peaks.sort(key=lambda p: p[1])
+        
+        # Optimized hash generation algorithm - same as fingerprinter
         for i, anchor in enumerate(peaks):
             freq_anchor, time_anchor = anchor
             
-            # Find target points within time window
-            j = i + 1
-            while j < len(peaks) and (peaks[j][1] - time_anchor) < 200:
-                freq_target, time_target = peaks[j]
-                delta_time = time_target - time_anchor
-                hash_input = f"{freq_anchor}|{freq_target}|{delta_time}"
-                hash_output = hashlib.sha1(hash_input.encode()).hexdigest()
-                hashes.append((hash_output, time_anchor))
+            # Find target zone (peaks within time window after anchor)
+            start_idx = i + 1
+            while start_idx < len(peaks) and peaks[start_idx][1] - time_anchor < 1:  # Skip very close peaks
+                start_idx += 1
+            
+            # Collect points within time window with adaptive fan out
+            j = start_idx
+            targets_added = 0
+            
+            # Enhanced: Distribute target points across the time window more evenly
+            zones = 3  # Number of zones in the time window
+            zone_targets = [0] * zones  # Count of targets in each zone
+            max_per_zone = int(fan_out / zones) + 1  # Max targets per zone
+            
+            while j < len(peaks) and peaks[j][1] - time_anchor < time_window:
+                # Determine which zone this target falls into
+                delta_time = peaks[j][1] - time_anchor
+                zone = min(int(delta_time * zones / time_window), zones - 1)
+                
+                # Only add if we haven't filled this zone yet
+                if zone_targets[zone] < max_per_zone:
+                    freq_target, time_target = peaks[j]
+                    
+                    # Enhanced hashing algorithm: include more frequency information 
+                    # and use a more robust hash combination
+                    
+                    # Get frequency band information (divide frequency range into bands)
+                    freq_band_anchor = freq_anchor // 5  # Simple frequency banding
+                    freq_band_target = freq_target // 5
+                    
+                    # Create hash with more robust information
+                    hash_input = f"{freq_band_anchor}|{freq_band_target}|{delta_time}|{freq_anchor % 5}|{freq_target % 5}"
+                    
+                    # Create SHA-1 hash and take first 20 chars for efficiency
+                    hash_output = hashlib.sha1(hash_input.encode()).hexdigest()[:20]
+                    
+                    # Store hash with its time offset
+                    hashes.append((hash_output, time_anchor))
+                    
+                    # Update counters
+                    zone_targets[zone] += 1
+                    targets_added += 1
+                
                 j += 1
+                
+                # Stop if we've collected enough points across all zones
+                if targets_added >= fan_out:
+                    break
         
         return hashes
     except Exception as e:
@@ -135,32 +212,45 @@ def add_temporal_info(match_result, query_hashes, reference_hashes, hop_length=5
     return match_result
 
 def find_matches(query_hashes: List[tuple], min_matches: int = 5) -> List[dict]:
-    """Modified to work with string IDs"""
+    """Find matches for query hashes in the fingerprint database"""
     matches = defaultdict(list)
     
     # Compare against all fingerprints in database
-    for db_hash, db_data in fingerprint_db.items():  # db_hash is now a string
-        db_hash_set = {h[0] for h in db_data['hashes']}
+    for db_hash, db_data in fingerprint_db.items():
+        # Create a hash lookup for faster matching
+        db_hash_dict = defaultdict(list)
+        for h, offset in db_data['hashes']:
+            db_hash_dict[h].append(offset)
         
+        # Match query hashes against database
         for q_hash, q_offset in query_hashes:
-            if q_hash in db_hash_set:
-                for db_h, db_offset in db_data['hashes']:
-                    if db_h == q_hash:
-                        time_diff = db_offset - q_offset
-                        matches[db_hash].append(time_diff)
+            if q_hash in db_hash_dict:
+                for db_offset in db_hash_dict[q_hash]:
+                    time_diff = db_offset - q_offset
+                    matches[db_hash].append(time_diff)
     
-    # Process matches (same as before but keeping string IDs)
+    # Process matches to find songs with consistent time differences
     results = []
     for db_hash, diffs in matches.items():
         if len(diffs) >= min_matches:
-            mode_diff = max(set(diffs), key=diffs.count)
-            results.append({
-                "song_id": db_hash,  # Keep as string
-                "song_path": song_index.get(db_hash, "Unknown"),
-                "confidence": len(diffs),
-                "offset": int(mode_diff),
-                "match_count": len(diffs)
-            })
+            # Find the most common time difference
+            diff_counts = defaultdict(int)
+            for diff in diffs:
+                diff_counts[diff] += 1
+            
+            # Get the top match
+            consistent_matches = max(diff_counts.items(), key=lambda x: x[1])
+            mode_diff, match_count = consistent_matches
+            
+            # Only include if we have enough consistent matches
+            if match_count >= min_matches:
+                results.append({
+                    "song_id": db_hash,
+                    "song_path": song_index.get(db_hash, "Unknown"),
+                    "confidence": match_count,
+                    "offset": int(mode_diff),
+                    "match_count": len(diffs)  # Total matches, not just consistent ones
+                })
     
     return sorted(results, key=lambda x: x['confidence'], reverse=True)
 
@@ -207,17 +297,17 @@ async def match_audio(file: UploadFile = File(...), min_matches: Optional[int] =
         - matches: List of match results
 
         Example:
-"confidence": 159 means 159 fingerprint points matched with consistent timing
-Example:
-"offset": 1344 →
-(1344 × 512)/22050 ≈ 31.2 seconds
-This means your query matches the reference track starting 31 seconds into the son
+        "confidence": 159 means 159 fingerprint points matched with consistent timing
+        Example:
+        "offset": 1344 →
+        (1344 × 512)/22050 ≈ 31.2 seconds
+        This means your query matches the reference track starting 31 seconds into the song
     """
     start_time = time.time()
     
     # Validate file type
-    # if not file.filename.lower().endswith(('.mp3', '.wav', '.flac', '.ogg')):
-    #     raise HTTPException(status_code=400, detail="Unsupported file format")
+    if not file.filename.lower().endswith(('.mp3', '.wav', '.flac', '.ogg')):
+        raise HTTPException(status_code=400, detail="Unsupported file format")
     
     try:
         # Save uploaded file to temp location
@@ -256,8 +346,8 @@ This means your query matches the reference track starting 31 seconds into the s
                     confidence=match["confidence"],
                     offset=match["offset"],
                     match_count=match["match_count"],
-                    temporal_info=match.get("temporal_info")  # Add this line
-                ) for match in enhanced_matches  # Use enhanced_matches here
+                    temporal_info=match.get("temporal_info")
+                ) for match in enhanced_matches
             ]
         )
 
