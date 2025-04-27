@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File,Header, HTTPException
 from fastapi.responses import JSONResponse
 import numpy as np
 import librosa
@@ -11,12 +11,23 @@ from typing import Dict, List, Optional
 import tempfile
 import time
 from pydantic import BaseModel
-
+from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Audio Fingerprint Matching API",
     description="API for matching audio fingerprints against a pre-computed database",
     version="1.0.0"
+)
+
+
+# 👇 Configure CORS to allow requests from Next.js
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your Next.js frontend URL
+    allow_credentials=True,
+    allow_methods=["POST", "OPTIONS"],  # Explicitly allow POST & OPTIONS
+    allow_headers=["*"],  # Allow all headers (including X-Station-ID)
 )
 
 # Global variable to store loaded fingerprints
@@ -276,6 +287,54 @@ class MatchResponse(BaseModel):
     matches_found: int
     processing_time_sec: float
     matches: List[MatchResult]
+
+
+
+
+# Assuming you have this model defined somewhere
+class SampleCollectorResponse(BaseModel):
+    message: str
+    status: int
+
+@app.post("/audio-samples", response_model=SampleCollectorResponse)
+async def collect_audio_samples(
+    file: UploadFile = File(...),
+    x_station_id: str = Header(None),
+    content_type: str = Header("audio/webm")
+):
+    # Create samples directory if it doesn't exist
+    samples_dir = "samples"
+    os.makedirs(samples_dir, exist_ok=True)
+    
+    # Validate station ID
+    if not x_station_id:
+        raise HTTPException(status_code=400, detail="Station ID header is required")
+    
+    # Generate a unique filename with timestamp and station ID
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{samples_dir}/{x_station_id}_{timestamp}.webm"
+    
+    try:
+        # Save the file
+        with open(filename, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "audio file saved",
+                "file_path": filename,
+                "station_id": x_station_id,
+                "size_bytes": len(content)
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error saving audio file: {str(e)}"
+        )
+
     
 
 # Update the endpoint decorator
