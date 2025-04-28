@@ -1,0 +1,11 @@
+{
+    "api_url": "http://localhost:8000",
+    "samples_dir": "samples",
+    "processed_db": "processed_samples.db",
+    "min_confidence": 10,
+    "deduplication_window": 300,
+    "batch_size": 20,
+    "match_endpoint": "/match",
+    "output_dir": "reports",
+    "delay_between_requests": 0.5
+  }

@@ -1,0 +1,80 @@
+{
+  "report_period": {
+    "start": "2025-04-20T00:00:00",
+    "end": "2025-04-29T23:59:59"
+  },
+  "summary": {
+    "total_plays": 3,
+    "unique_stations": 3,
+    "unique_songs": 3
+  },
+  "top_songs": [
+    {
+      "song_id": "e9a81f43722fc3b558d7cdca7d78b83e",
+      "song_path": "content/ONAWULIRA (ft.Aaronx) .mp3",
+      "total_plays": 1,
+      "stations": {
+        "station10": 1
+      }
+    },
+    {
+      "song_id": "75e42a7ecf3cb6524510d6054fb2fc70",
+      "song_path": "content/Mama-Realmids.mp3",
+      "total_plays": 1,
+      "stations": {
+        "station11": 1
+      }
+    },
+    {
+      "song_id": "759358fe2bf6cb7e637ccdf0bd312505",
+      "song_path": "content/WhatsApp Audio 2025-03-15 at 7.10.56 PM.mp3",
+      "total_plays": 1,
+      "stations": {
+        "station14": 1
+      }
+    }
+  ],
+  "station_summary": {
+    "station10": {
+      "total_plays": 1,
+      "songs": {
+        "e9a81f43722fc3b558d7cdca7d78b83e": 1
+      }
+    },
+    "station11": {
+      "total_plays": 1,
+      "songs": {
+        "75e42a7ecf3cb6524510d6054fb2fc70": 1
+      }
+    },
+    "station14": {
+      "total_plays": 1,
+      "songs": {
+        "759358fe2bf6cb7e637ccdf0bd312505": 1
+      }
+    }
+  },
+  "all_plays": [
+    {
+      "station_id": "station10",
+      "song_id": "e9a81f43722fc3b558d7cdca7d78b83e",
+      "song_path": "content/ONAWULIRA (ft.Aaronx) .mp3",
+      "detected_at": "2025-04-28T02:32:17",
+      "confidence": 20
+    },
+    {
+      "station_id": "station11",
+      "song_id": "75e42a7ecf3cb6524510d6054fb2fc70",
+      "song_path": "content/Mama-Realmids.mp3",
+      "detected_at": "2025-04-28T02:32:17",
+      "confidence": 98
+    },
+    {
+      "station_id": "station14",
+      "song_id": "759358fe2bf6cb7e637ccdf0bd312505",
+      "song_path": "content/WhatsApp Audio 2025-03-15 at 7.10.56 PM.mp3",
+      "detected_at": "2025-04-28T02:32:17",
+      "confidence": 1355
+    }
+  ]
+}
