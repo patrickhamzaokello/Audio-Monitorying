@@ -6,6 +6,7 @@ import hashlib
 from scipy import ndimage
 import os
 import pickle
+from fastapi import Form
 from collections import defaultdict
 from typing import Dict, List, Optional
 import tempfile
@@ -299,20 +300,19 @@ class SampleCollectorResponse(BaseModel):
 @app.post("/audio-samples", response_model=SampleCollectorResponse)
 async def collect_audio_samples(
     file: UploadFile = File(...),
-    x_station_id: str = Header(None),
-    content_type: str = Header("audio/webm")
+    stationId: str = Form(...), 
 ):
     # Create samples directory if it doesn't exist
     samples_dir = "samples"
     os.makedirs(samples_dir, exist_ok=True)
     
     # Validate station ID
-    if not x_station_id:
+    if not stationId:
         raise HTTPException(status_code=400, detail="Station ID header is required")
     
     # Generate a unique filename with timestamp and station ID
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{samples_dir}/{x_station_id}_{timestamp}.webm"
+    filename = f"{samples_dir}/{stationId}_{timestamp}.mp3"
     
     try:
         # Save the file
@@ -325,7 +325,7 @@ async def collect_audio_samples(
             content={
                 "message": "audio file saved",
                 "file_path": filename,
-                "station_id": x_station_id,
+                "station_id": stationId,
                 "size_bytes": len(content)
             }
         )
